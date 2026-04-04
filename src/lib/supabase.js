@@ -6,9 +6,10 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'adicione-sua-
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Cliente silencioso para criar contas de alunos sem sobrescrever a sessão do professor logado (persistSession: false)
+// Cliente silencioso para criar contas de alunos sem sobrescrever a sessão do professor logado
 export const supabaseSilentAuth = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    storageKey: 'supabase-silent-key',
     persistSession: false,
     autoRefreshToken: false
   }
