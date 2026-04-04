@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { History, Dumbbell, Calendar, CheckSquare } from 'lucide-react';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -11,6 +12,8 @@ export default function Dashboard() {
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [exercises, setExercises] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState('train'); // 'train' ou 'history'
   
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
@@ -19,7 +22,10 @@ export default function Dashboard() {
   const [selectedDay, setSelectedDay] = useState('');
 
   useEffect(() => {
-    if (profile?.id) fetchMyPlans();
+    if (profile?.id) {
+      fetchMyPlans();
+      fetchHistory();
+    }
   }, [profile]);
 
   const fetchMyPlans = async () => {
@@ -32,11 +38,21 @@ export default function Dashboard() {
 
     if (data && data.length > 0) {
       setPlans(data);
-      setActivePlan(data[0]); // Por padrão, mostrar o plano mais recente
+      setActivePlan(data[0]); 
       fetchGroups(data[0].id);
     } else {
       setLoading(false);
     }
+  };
+
+  const fetchHistory = async () => {
+    const { data } = await supabase
+      .from('execution_logs')
+      .select('*, workout_groups(name, workout_plans(title))')
+      .eq('aluno_id', profile.id)
+      .order('completed_at', { ascending: false });
+    
+    if (data) setHistory(data);
   };
 
   const fetchGroups = async (planId) => {
@@ -116,7 +132,6 @@ export default function Dashboard() {
   const handleFinishWorkout = async () => {
     if (!selectedDay) return alert('Por favor, informe em qual dia da semana este treino está sendo concluído.');
 
-    // Registra o log no banco
     const { error } = await supabase.from('execution_logs').insert([{
       aluno_id: profile.id,
       group_id: selectedGroupId,
@@ -127,6 +142,7 @@ export default function Dashboard() {
       alert('Treino concluído e salvo no histórico! Parabéns!');
       setIsFocusMode(false);
       setSelectedDay('');
+      fetchHistory(); // Recarregar histórico
     } else {
       alert('Erro ao salvar o treino.');
     }
@@ -143,21 +159,6 @@ export default function Dashboard() {
     return <div className="dashboard-wrapper flex-center">Buscando seus treinos...</div>;
   }
 
-  if (!activePlan) {
-    return (
-      <div className="dashboard-wrapper">
-        <header className="dashboard-header">
-           <h2 className="greeting title-gradient">Seu Treino</h2>
-           <button onClick={signOut} className="btn-secondary" style={{ padding: '0.4rem 1rem' }}>Sair</button>
-        </header>
-        <div className="glass-card" style={{ textAlign: 'center', marginTop: '2rem' }}>
-          <h3>Nenhum plano ativo encontrado.</h3>
-          <p style={{ marginTop: '1rem', color: '#aaa' }}>Peça ao seu professor para montar um plano de treinos para você.</p>
-        </div>
-      </div>
-    );
-  }
-
   const currentExercise = exercises[currentExerciseIndex];
 
   if (isFocusMode && currentExercise) {
@@ -167,7 +168,7 @@ export default function Dashboard() {
       <div className="dashboard-wrapper">
         <header className="focus-header">
           <button className="btn-back" onClick={handleExitFocus}>⬅ Visão Macro</button>
-          <span className="focus-workout-title">{activePlan.title}</span>
+          <span className="focus-workout-title">{activePlan?.title || 'Treino'}</span>
           <span>{currentExerciseIndex + 1} / {exercises.length}</span>
         </header>
 
@@ -235,72 +236,125 @@ export default function Dashboard() {
     );
   }
 
-  const activeGroup = groups.find(g => g.id === selectedGroupId);
-
   return (
     <div className="dashboard-wrapper">
       <header className="dashboard-header">
         <div>
           <h2 className="greeting title-gradient">Olá, {profile?.full_name?.split(' ')[0]}</h2>
-          <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center' }}>
-            <span className="date-display" style={{ margin: 0 }}>Plano Vigente: </span>
-            <select 
-              value={activePlan.id} 
-              onChange={handlePlanChange} 
-              style={{ marginLeft: '0.5rem', background: 'transparent', color: 'var(--primary)', border: 'none', borderBottom: '1px solid var(--primary)', fontSize: '1rem', outline: 'none', cursor: 'pointer' }}
-            >
-              {plans.map(p => (
-                <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.title}</option>
-              ))}
-            </select>
-          </div>
+          <p className="date-display">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
         <button onClick={signOut} className="btn-secondary" style={{ padding: '0.4rem 1rem' }}>Sair</button>
       </header>
 
-      {groups.length > 0 ? (
-        <div className="selector-container">
-          <select 
-            className="workout-select" 
-            value={selectedGroupId} 
-            onChange={handleGroupChange}
-          >
-            {groups.map(g => (
-              <option key={g.id} value={g.id}>
-                Treino: {g.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : (
-        <div className="glass-card" style={{ marginTop: '2rem' }}>Nenhum grupo de treino encontrado neste plano.</div>
-      )}
+      {/* Navegação por Abas */}
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
+        <button 
+          onClick={() => setActiveTab('train')}
+          style={{ 
+            background: 'none', border: 'none', color: activeTab === 'train' ? 'var(--primary)' : '#888', 
+            display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: activeTab === 'train' ? 'bold' : 'normal',
+            borderBottom: activeTab === 'train' ? '2px solid var(--primary)' : 'none', paddingBottom: '0.5rem'
+          }}
+        >
+          <Dumbbell size={18} /> Treinar Agora
+        </button>
+        <button 
+          onClick={() => setActiveTab('history')}
+          style={{ 
+            background: 'none', border: 'none', color: activeTab === 'history' ? 'var(--primary)' : '#888', 
+            display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: activeTab === 'history' ? 'bold' : 'normal',
+            borderBottom: activeTab === 'history' ? '2px solid var(--primary)' : 'none', paddingBottom: '0.5rem'
+          }}
+        >
+          <History size={18} /> Meu Histórico
+        </button>
+      </div>
 
-      {groups.length > 0 && exercises.length > 0 && (
-        <section className="workout-container glass-card">
-          <h3 className="workout-title">{activeGroup?.name}</h3>
-          
-          <div className="exercise-list">
-            {exercises.map(ex => (
-              <div key={ex.id} className="exercise-card interactive-hover">
-                <div className="exercise-details">
-                  <span className="exercise-name">{ex.name}</span>
-                  <span className="exercise-metrics">{ex.sets}x {ex.reps}</span>
-                </div>
-                <div className="exercise-timer" style={{ display: 'flex', gap: '1rem' }}>
-                  {ex.rest && ex.rest !== '-' && <span>⏱ Descanso: {ex.rest}</span>}
-                  {ex.load && <span style={{ color: 'var(--primary)' }}>Peso: {ex.load}</span>}
-                  {ex.obs && <span className="obs-text">⚡ {ex.obs}</span>}
-                </div>
+      {activeTab === 'train' ? (
+        <>
+          {!activePlan ? (
+            <div className="glass-card" style={{ textAlign: 'center', marginTop: '2rem' }}>
+              <h3>Nenhum plano ativo encontrado.</h3>
+              <p style={{ marginTop: '1rem', color: '#aaa' }}>Peça ao seu professor para montar um plano de treinos para você.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center' }}>
+                <span className="date-display" style={{ margin: 0, fontWeight: 'bold' }}>Plano Atual: </span>
+                <select 
+                  value={activePlan.id} 
+                  onChange={handlePlanChange} 
+                  style={{ marginLeft: '0.5rem', background: 'transparent', color: 'var(--primary)', border: 'none', borderBottom: '1px solid var(--primary)', fontSize: '1rem', outline: 'none', cursor: 'pointer' }}
+                >
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.title}</option>
+                  ))}
+                </select>
               </div>
-            ))}
-          </div>
 
-          <button className="btn-action-start" onClick={handleStartFocus}>
-            🔥 Iniciar Execução (Modo Foco)
-          </button>
-        </section>
+              {groups.length > 0 ? (
+                <div className="selector-container">
+                  <select className="workout-select" value={selectedGroupId} onChange={handleGroupChange}>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>Treino: {g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="glass-card" style={{ marginTop: '2rem' }}>Nenhum grupo de treino encontrado neste plano.</div>
+              )}
+
+              {groups.length > 0 && exercises.length > 0 && (
+                <section className="workout-container glass-card">
+                  <h3 className="workout-title">{groups.find(g => g.id === selectedGroupId)?.name}</h3>
+                  <div className="exercise-list">
+                    {exercises.map(ex => (
+                      <div key={ex.id} className="exercise-card interactive-hover">
+                        <div className="exercise-details">
+                          <span className="exercise-name">{ex.name}</span>
+                          <span className="exercise-metrics">{ex.sets}x {ex.reps}</span>
+                        </div>
+                        <div className="exercise-timer" style={{ display: 'flex', gap: '1rem' }}>
+                          {ex.rest && ex.rest !== '-' && <span>⏱ Descanso: {ex.rest}</span>}
+                          {ex.load && <span style={{ color: 'var(--primary)' }}>Peso: {ex.load}</span>}
+                          {ex.obs && <span className="obs-text">⚡ {ex.obs}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="btn-action-start" onClick={handleStartFocus}>🔥 Iniciar Execução (Modo Foco)</button>
+                </section>
+              )}
+            </>
+          )}
+        </>
+      ) : (
+        <div className="history-container">
+          {history.length === 0 ? (
+            <div className="glass-card" style={{ textAlign: 'center' }}>
+              <p>Você ainda não concluiu nenhum treino. Comece hoje mesmo! 💪</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {history.map(log => (
+                <div key={log.id} className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, color: 'var(--primary)' }}>{log.workout_groups?.name || 'Treino Finalizado'}</h4>
+                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: '#888' }}>
+                      {log.workout_groups?.workout_plans?.title || 'Plano Antigo'}
+                    </p>
+                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem', color: '#aaa', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Calendar size={14} /> {new Date(log.completed_at).toLocaleDateString('pt-BR')} | 
+                      <CheckSquare size={14} /> {log.notes?.split('|')[1]?.trim() || 'Concluído'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
+
