@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [completedSets, setCompletedSets] = useState({});
   const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState('');
 
   useEffect(() => {
     if (profile?.id) fetchMyPlans();
@@ -69,6 +70,13 @@ export default function Dashboard() {
     setLoading(false);
   };
 
+  const handlePlanChange = (e) => {
+    const pId = e.target.value;
+    const plan = plans.find(p => p.id === pId);
+    setActivePlan(plan);
+    fetchGroups(pId);
+  };
+
   const handleGroupChange = (e) => {
     const gId = e.target.value;
     setSelectedGroupId(gId);
@@ -106,16 +114,19 @@ export default function Dashboard() {
   };
 
   const handleFinishWorkout = async () => {
+    if (!selectedDay) return alert('Por favor, informe em qual dia da semana este treino está sendo concluído.');
+
     // Registra o log no banco
     const { error } = await supabase.from('execution_logs').insert([{
       aluno_id: profile.id,
       group_id: selectedGroupId,
-      notes: 'Finalizado via App V2'
+      notes: `Finalizado via App V2 | Dia: ${selectedDay}`
     }]);
 
     if (!error) {
       alert('Treino concluído e salvo no histórico! Parabéns!');
       setIsFocusMode(false);
+      setSelectedDay('');
     } else {
       alert('Erro ao salvar o treino.');
     }
@@ -203,7 +214,19 @@ export default function Dashboard() {
           </button>
           
           {currentExerciseIndex === exercises.length - 1 ? (
-             <button className="btn-success" onClick={handleFinishWorkout}>Concluir Treino!</button>
+             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+               <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)} style={{ padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}>
+                 <option value="">Informe o Dia...</option>
+                 <option value="Segunda-feira">Segunda-feira</option>
+                 <option value="Terça-feira">Terça-feira</option>
+                 <option value="Quarta-feira">Quarta-feira</option>
+                 <option value="Quinta-feira">Quinta-feira</option>
+                 <option value="Sexta-feira">Sexta-feira</option>
+                 <option value="Sábado">Sábado</option>
+                 <option value="Domingo">Domingo</option>
+               </select>
+               <button className="btn-success" onClick={handleFinishWorkout}>Concluir Treino!</button>
+             </div>
           ) : (
              <button className="btn-primary" onClick={handleNext}>Próximo Exercício ➡</button>
           )}
@@ -219,7 +242,18 @@ export default function Dashboard() {
       <header className="dashboard-header">
         <div>
           <h2 className="greeting title-gradient">Olá, {profile?.full_name?.split(' ')[0]}</h2>
-          <p className="date-display">Plano Vigente: {activePlan.title}</p>
+          <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center' }}>
+            <span className="date-display" style={{ margin: 0 }}>Plano Vigente: </span>
+            <select 
+              value={activePlan.id} 
+              onChange={handlePlanChange} 
+              style={{ marginLeft: '0.5rem', background: 'transparent', color: 'var(--primary)', border: 'none', borderBottom: '1px solid var(--primary)', fontSize: '1rem', outline: 'none', cursor: 'pointer' }}
+            >
+              {plans.map(p => (
+                <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.title}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <button onClick={signOut} className="btn-secondary" style={{ padding: '0.4rem 1rem' }}>Sair</button>
       </header>

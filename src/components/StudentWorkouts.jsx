@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
 
 export default function StudentWorkouts({ aluno, onBack }) {
   const [plans, setPlans] = useState([]);
@@ -9,6 +9,11 @@ export default function StudentWorkouts({ aluno, onBack }) {
   const [newTitle, setNewTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  
+  const [editingPlanId, setEditingPlanId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
   
   const [groups, setGroups] = useState([]);
   const [newGroupName, setNewGroupName] = useState('');
@@ -90,6 +95,28 @@ export default function StudentWorkouts({ aluno, onBack }) {
   const deleteExercise = async (id, groupId) => {
     await supabase.from('exercises').delete().eq('id', id);
     setExercises({...exercises, [groupId]: exercises[groupId].filter(ex => ex.id !== id)});
+  };
+
+  const updatePlan = async (id) => {
+    const { data, error } = await supabase.from('workout_plans').update({
+      title: editTitle,
+      start_date: editStartDate || null,
+      end_date: editEndDate || null
+    }).eq('id', id).select();
+    
+    if (!error && data) {
+      setPlans(plans.map(p => p.id === id ? data[0] : p));
+      setEditingPlanId(null);
+    } else {
+      alert('Erro ao atualizar: ' + (error?.message || ''));
+    }
+  };
+
+  const startEditingPlan = (p) => {
+    setEditingPlanId(p.id);
+    setEditTitle(p.title);
+    setEditStartDate(p.start_date || '');
+    setEditEndDate(p.end_date || '');
   };
 
   if (selectedPlan) {
@@ -189,18 +216,43 @@ export default function StudentWorkouts({ aluno, onBack }) {
         <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Nenhum plano cadastrado.</p>
       ) : (
         <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {plans.map(p => (
-            <div key={p.id} style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ display: 'block', fontSize: '1.1rem', marginBottom: '0.3rem', color: 'var(--primary)' }}>{p.title}</strong>
-                <span style={{ fontSize: '0.85rem', color: '#aaa' }}>{p.start_date ? `${p.start_date} até ${p.end_date || '?'}` : 'Sem validade definida'}</span>
+          {plans.map(p => {
+            if (editingPlanId === p.id) {
+              return (
+                <div key={p.id} style={{ padding: '1rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--primary)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Título" style={{ padding: '0.5rem', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} />
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                       <label style={{ fontSize: '0.7rem', color: '#aaa', marginBottom: '0.2rem' }}>Início</label>
+                       <input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                       <label style={{ fontSize: '0.7rem', color: '#aaa', marginBottom: '0.2rem' }}>Fim</label>
+                       <input type="date" value={editEndDate} onChange={e => setEditEndDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <button onClick={() => updatePlan(p.id)} className="btn-primary" style={{ flex: 1, padding: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}><Check size={16}/> Salvar</button>
+                    <button onClick={() => setEditingPlanId(null)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}><X size={16}/> Cancelar</button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={p.id} style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '1.1rem', marginBottom: '0.3rem', color: 'var(--primary)' }}>{p.title}</strong>
+                  <span style={{ fontSize: '0.85rem', color: '#aaa' }}>{p.start_date ? `${p.start_date} até ${p.end_date || '?'}` : 'Sem validade definida'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={() => startEditingPlan(p)} className="btn-secondary" style={{ padding: '0.5rem', color: '#a855f7', borderColor: 'rgba(168, 85, 247, 0.3)' }} title="Editar Plano"><Edit2 size={16} /></button>
+                  <button onClick={() => deletePlan(p.id)} className="btn-secondary" style={{ padding: '0.5rem', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }} title="Excluir Plano"><Trash2 size={16} /></button>
+                  <button onClick={() => openPlan(p)} className="btn-secondary" style={{ padding: '0.5rem 1rem', marginLeft: '0.5rem' }}>Estruturar</button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button onClick={() => openPlan(p)} className="btn-secondary" style={{ padding: '0.5rem 1rem' }}>Estruturar</button>
-                <button onClick={() => deletePlan(p.id)} className="btn-secondary" style={{ padding: '0.5rem 1rem', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}><Trash2 size={16} /></button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
