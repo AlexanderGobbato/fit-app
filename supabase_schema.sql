@@ -94,9 +94,15 @@ ALTER TABLE exercises ENABLE ROW LEVEL SECURITY;
 ALTER TABLE execution_logs ENABLE ROW LEVEL SECURITY;
 
 -- ADMIN PODE FAZER TUDO
+-- Função para burlar o Loop infinito de segurança:
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS text AS $$
+  SELECT role FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql SECURITY DEFINER;
+
 CREATE POLICY "Admins podem ver e editar tudo" ON profiles
     FOR ALL
-    USING ( (EXISTS (SELECT 1 FROM profiles auth_p WHERE auth_p.id = auth.uid() AND auth_p.role = 'ADMIN')) );
+    USING ( public.get_my_role() = 'ADMIN' );
 
 CREATE POLICY "Admins ver tudo: workout_plans" ON workout_plans FOR ALL USING ((EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'ADMIN')));
 CREATE POLICY "Admins ver tudo: workout_groups" ON workout_groups FOR ALL USING ((EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'ADMIN')));
