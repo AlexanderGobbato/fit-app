@@ -1,18 +1,82 @@
 import { useState, useEffect } from 'react';
-import { workoutsData } from '../data/workouts';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const [selectedWorkoutId, setSelectedWorkoutId] = useState(workoutsData[0].id);
+  const { profile, signOut } = useAuth();
+  
+  const [plans, setPlans] = useState([]);
+  const [activePlan, setActivePlan] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [exercises, setExercises] = useState([]);
+  
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [completedSets, setCompletedSets] = useState({});
+  const [loading, setLoading] = useState(true);
 
-  const activeWorkout = workoutsData.find(w => w.id === selectedWorkoutId);
-  const activeExercises = activeWorkout?.exercises || [];
-  const currentExercise = activeExercises[currentExerciseIndex];
+  useEffect(() => {
+    if (profile?.id) fetchMyPlans();
+  }, [profile]);
+
+  const fetchMyPlans = async () => {
+    const { data } = await supabase
+      .from('workout_plans')
+      .select('*')
+      .eq('aluno_id', profile.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) {
+      setPlans(data);
+      setActivePlan(data[0]); // Por padrão, mostrar o plano mais recente
+      fetchGroups(data[0].id);
+    } else {
+      setLoading(false);
+    }
+  };
+
+  const fetchGroups = async (planId) => {
+    const { data } = await supabase
+      .from('workout_groups')
+      .select('*')
+      .eq('plan_id', planId)
+      .order('created_at');
+    
+    if (data && data.length > 0) {
+      setGroups(data);
+      setSelectedGroupId(data[0].id);
+      fetchExercises(data[0].id);
+    } else {
+      setGroups([]);
+      setExercises([]);
+      setLoading(false);
+    }
+  };
+
+  const fetchExercises = async (groupId) => {
+    const { data } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('group_id', groupId)
+      .order('created_at');
+      
+    if (data) {
+      setExercises(data);
+    }
+    setLoading(false);
+  };
+
+  const handleGroupChange = (e) => {
+    const gId = e.target.value;
+    setSelectedGroupId(gId);
+    fetchExercises(gId);
+  };
 
   const handleStartFocus = () => {
+    if (exercises.length === 0) return alert('Este grupo não possui exercícios cadastrados.');
     setIsFocusMode(true);
     setCurrentExerciseIndex(0);
     setCompletedSets({});
@@ -23,7 +87,7 @@ export default function Dashboard() {
   };
 
   const handleNext = () => {
-    if (currentExerciseIndex < activeExercises.length - 1) {
+    if (currentExerciseIndex < exercises.length - 1) {
       setCurrentExerciseIndex(curr => curr + 1);
     }
   };
@@ -41,6 +105,22 @@ export default function Dashboard() {
     }));
   };
 
+  const handleFinishWorkout = async () => {
+    // Registra o log no banco
+    const { error } = await supabase.from('execution_logs').insert([{
+      aluno_id: profile.id,
+      group_id: selectedGroupId,
+      notes: 'Finalizado via App V2'
+    }]);
+
+    if (!error) {
+      alert('Treino concluído e salvo no histórico! Parabéns!');
+      setIsFocusMode(false);
+    } else {
+      alert('Erro ao salvar o treino.');
+    }
+  };
+
   const parseNumSets = (setsStr) => {
     if (!setsStr) return [0, 1, 2];
     const match = setsStr.match(/(\d+)/);
@@ -48,15 +128,36 @@ export default function Dashboard() {
     return Array.from({length: num > 0 ? num : 3}, (_, i) => i);
   };
 
+  if (loading) {
+    return <div className="dashboard-wrapper flex-center">Buscando seus treinos...</div>;
+  }
+
+  if (!activePlan) {
+    return (
+      <div className="dashboard-wrapper">
+        <header className="dashboard-header">
+           <h2 className="greeting title-gradient">Seu Treino</h2>
+           <button onClick={signOut} className="btn-secondary" style={{ padding: '0.4rem 1rem' }}>Sair</button>
+        </header>
+        <div className="glass-card" style={{ textAlign: 'center', marginTop: '2rem' }}>
+          <h3>Nenhum plano ativo encontrado.</h3>
+          <p style={{ marginTop: '1rem', color: '#aaa' }}>Peça ao seu professor para montar um plano de treinos para você.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentExercise = exercises[currentExerciseIndex];
+
   if (isFocusMode && currentExercise) {
     const listSets = parseNumSets(currentExercise.sets);
     
     return (
       <div className="dashboard-wrapper">
         <header className="focus-header">
-          <button className="btn-back" onClick={handleExitFocus}>⬅  Visão Macro</button>
-          <span className="focus-workout-title">{activeWorkout.title}</span>
-          <span>{currentExerciseIndex + 1} / {activeExercises.length}</span>
+          <button className="btn-back" onClick={handleExitFocus}>⬅ Visão Macro</button>
+          <span className="focus-workout-title">{activePlan.title}</span>
+          <span>{currentExerciseIndex + 1} / {exercises.length}</span>
         </header>
 
         <section className="focus-card glass-card">
@@ -101,8 +202,8 @@ export default function Dashboard() {
             Anterior
           </button>
           
-          {currentExerciseIndex === activeExercises.length - 1 ? (
-             <button className="btn-success" onClick={handleExitFocus}>Finalizar Treino!</button>
+          {currentExerciseIndex === exercises.length - 1 ? (
+             <button className="btn-success" onClick={handleFinishWorkout}>Concluir Treino!</button>
           ) : (
              <button className="btn-primary" onClick={handleNext}>Próximo Exercício ➡</button>
           )}
@@ -111,51 +212,61 @@ export default function Dashboard() {
     );
   }
 
+  const activeGroup = groups.find(g => g.id === selectedGroupId);
+
   return (
     <div className="dashboard-wrapper">
       <header className="dashboard-header">
         <div>
-          <h2 className="greeting title-gradient">Seu Treino</h2>
-          <p className="date-display">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <h2 className="greeting title-gradient">Olá, {profile?.full_name?.split(' ')[0]}</h2>
+          <p className="date-display">Plano Vigente: {activePlan.title}</p>
         </div>
+        <button onClick={signOut} className="btn-secondary" style={{ padding: '0.4rem 1rem' }}>Sair</button>
       </header>
 
-      <div className="selector-container">
-        <select 
-          className="workout-select" 
-          value={selectedWorkoutId} 
-          onChange={(e) => setSelectedWorkoutId(e.target.value)}
-        >
-          {workoutsData.map(workout => (
-            <option key={workout.id} value={workout.id}>
-              {workout.title}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <section className="workout-container glass-card">
-        <h3 className="workout-title">{activeWorkout.title}</h3>
-        
-        <div className="exercise-list">
-          {activeExercises.map(ex => (
-            <div key={ex.id} className="exercise-card interactive-hover">
-              <div className="exercise-details">
-                <span className="exercise-name">{ex.name}</span>
-                <span className="exercise-metrics">{ex.sets}x {ex.reps}</span>
-              </div>
-              <div className="exercise-timer">
-                {ex.rest !== '-' && <span>⏱ Descanso: {ex.rest}</span>}
-                {ex.obs && <span className="obs-text">⚡ {ex.obs}</span>}
-              </div>
-            </div>
-          ))}
+      {groups.length > 0 ? (
+        <div className="selector-container">
+          <select 
+            className="workout-select" 
+            value={selectedGroupId} 
+            onChange={handleGroupChange}
+          >
+            {groups.map(g => (
+              <option key={g.id} value={g.id}>
+                Treino: {g.name}
+              </option>
+            ))}
+          </select>
         </div>
+      ) : (
+        <div className="glass-card" style={{ marginTop: '2rem' }}>Nenhum grupo de treino encontrado neste plano.</div>
+      )}
 
-        <button className="btn-action-start" onClick={handleStartFocus}>
-          🔥 Iniciar Execução (Modo Foco)
-        </button>
-      </section>
+      {groups.length > 0 && exercises.length > 0 && (
+        <section className="workout-container glass-card">
+          <h3 className="workout-title">{activeGroup?.name}</h3>
+          
+          <div className="exercise-list">
+            {exercises.map(ex => (
+              <div key={ex.id} className="exercise-card interactive-hover">
+                <div className="exercise-details">
+                  <span className="exercise-name">{ex.name}</span>
+                  <span className="exercise-metrics">{ex.sets}x {ex.reps}</span>
+                </div>
+                <div className="exercise-timer" style={{ display: 'flex', gap: '1rem' }}>
+                  {ex.rest && ex.rest !== '-' && <span>⏱ Descanso: {ex.rest}</span>}
+                  {ex.load && <span style={{ color: 'var(--primary)' }}>Peso: {ex.load}</span>}
+                  {ex.obs && <span className="obs-text">⚡ {ex.obs}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button className="btn-action-start" onClick={handleStartFocus}>
+            🔥 Iniciar Execução (Modo Foco)
+          </button>
+        </section>
+      )}
     </div>
   );
 }
