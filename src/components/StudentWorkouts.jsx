@@ -17,10 +17,14 @@ export default function StudentWorkouts({ aluno, onBack }) {
   
   const [groups, setGroups] = useState([]);
   const [newGroupName, setNewGroupName] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editGroupName, setEditGroupName] = useState('');
   
   const [exercises, setExercises] = useState({}); // { group_id: [] }
   const [newExercise, setNewExercise] = useState({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
   const [activeGroupForm, setActiveGroupForm] = useState(null); // group_id
+  const [editingExerciseId, setEditingExerciseId] = useState(null);
+  const [editExerciseData, setEditExerciseData] = useState({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
 
   useEffect(() => {
     fetchPlans();
@@ -75,6 +79,25 @@ export default function StudentWorkouts({ aluno, onBack }) {
     }
   };
 
+  const updateGroup = async (groupId) => {
+    const { data, error } = await supabase.from('workout_groups').update({ name: editGroupName }).eq('id', groupId).select();
+    if (!error && data) {
+      setGroups(groups.map(g => g.id === groupId ? data[0] : g));
+      setEditingGroupId(null);
+    }
+  };
+
+  const deleteGroup = async (groupId) => {
+    if (!confirm('Deseja excluir este GRUPO INTEIRO e todos os seus exercícios?')) return;
+    const { error } = await supabase.from('workout_groups').delete().eq('id', groupId);
+    if (!error) {
+      setGroups(groups.filter(g => g.id !== groupId));
+      const newExercises = { ...exercises };
+      delete newExercises[groupId];
+      setExercises(newExercises);
+    }
+  };
+
   const createExercise = async (e, groupId) => {
     e.preventDefault();
     const { data } = await supabase.from('exercises').insert([{ group_id: groupId, ...newExercise }]).select();
@@ -82,6 +105,17 @@ export default function StudentWorkouts({ aluno, onBack }) {
       setExercises({ ...exercises, [groupId]: [...exercises[groupId], data[0]] });
       setNewExercise({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
       setActiveGroupForm(null);
+    }
+  };
+
+  const updateExercise = async (exerciseId, groupId) => {
+    const { data, error } = await supabase.from('exercises').update({ ...editExerciseData }).eq('id', exerciseId).select();
+    if (!error && data) {
+      setExercises({
+        ...exercises,
+        [groupId]: exercises[groupId].map(ex => ex.id === exerciseId ? data[0] : ex)
+      });
+      setEditingExerciseId(null);
     }
   };
 
@@ -119,6 +153,18 @@ export default function StudentWorkouts({ aluno, onBack }) {
     setEditEndDate(p.end_date || '');
   };
 
+  const startEditingExercise = (ex) => {
+    setEditingExerciseId(ex.id);
+    setEditExerciseData({
+      name: ex.name,
+      sets: ex.sets,
+      reps: ex.reps,
+      load: ex.load,
+      rest: ex.rest,
+      obs: ex.obs || ''
+    });
+  };
+
   if (selectedPlan) {
     return (
       <div className="glass-card">
@@ -133,7 +179,7 @@ export default function StudentWorkouts({ aluno, onBack }) {
         {/* Formulário Novo Grupo */}
         <form onSubmit={createGroup} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
           <input 
-            type="text" placeholder="Nome do Grupo (Ex: Costas e Bíceps)" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} required
+            type="text" placeholder="Nome do Novo Grupo (Ex: Costas e Bíceps)" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} required
             style={{ flex: 1, padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
           />
           <button type="submit" className="btn-glow" style={{ padding: '0 1.5rem' }}>Criar Grupo</button>
@@ -142,20 +188,59 @@ export default function StudentWorkouts({ aluno, onBack }) {
         {/* Lista de Grupos */}
         {groups.map(g => (
           <div key={g.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '10px', marginBottom: '1.5rem', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <h4 style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>{g.name}</h4>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              {editingGroupId === g.id ? (
+                <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
+                  <input type="text" value={editGroupName} onChange={e => setEditGroupName(e.target.value)} style={{ flex: 1, padding: '0.5rem', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} />
+                  <button onClick={() => updateGroup(g.id)} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={20}/></button>
+                  <button onClick={() => setEditingGroupId(null)} style={{ color: '#aaa', background: 'none', border: 'none', cursor: 'pointer' }}><X size={20}/></button>
+                </div>
+              ) : (
+                <>
+                  <h4 style={{ fontSize: '1.2rem', margin: 0 }}>{g.name}</h4>
+                  <div style={{ display: 'flex', gap: '0.8rem' }}>
+                    <button onClick={() => {setEditingGroupId(g.id); setEditGroupName(g.name)}} style={{ background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer' }} title="Editar Nome do Grupo"><Edit2 size={16}/></button>
+                    <button onClick={() => deleteGroup(g.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }} title="Excluir Grupo Inteiro"><Trash2 size={16}/></button>
+                  </div>
+                </>
+              )}
+            </div>
             
             {/* Lista de Exercicios do Grupo */}
             {exercises[g.id]?.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' }}>
                 {exercises[g.id].map(ex => (
-                  <div key={ex.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.8rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
-                    <div>
-                      <strong style={{ color: 'var(--primary)' }}>{ex.name}</strong>
-                      <span style={{ fontSize: '0.85rem', color: '#aaa', marginLeft: '1rem' }}>
-                        {ex.sets}x{ex.reps} | Carga: {ex.load} | Rest: {ex.rest} {ex.obs && ` | Obs: ${ex.obs}`}
-                      </span>
-                    </div>
-                    <button onClick={() => deleteExercise(ex.id, g.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={16}/></button>
+                  <div key={ex.id} style={{ display: 'flex', flexDirection: 'column', padding: '0.8rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {editingExerciseId === ex.id ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <input type="text" value={editExerciseData.name} onChange={e => setEditExerciseData({...editExerciseData, name: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Nome" />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.5rem' }}>
+                          <input type="text" value={editExerciseData.sets} onChange={e => setEditExerciseData({...editExerciseData, sets: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Séries" />
+                          <input type="text" value={editExerciseData.reps} onChange={e => setEditExerciseData({...editExerciseData, reps: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Reps" />
+                          <input type="text" value={editExerciseData.load} onChange={e => setEditExerciseData({...editExerciseData, load: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Cargo" />
+                          <input type="text" value={editExerciseData.rest} onChange={e => setEditExerciseData({...editExerciseData, rest: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Descanso" />
+                        </div>
+                        <input type="text" value={editExerciseData.obs} onChange={e => setEditExerciseData({...editExerciseData, obs: e.target.value})} style={{ padding: '0.5rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} placeholder="Obs" />
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.3rem' }}>
+                          <button onClick={() => updateExercise(ex.id, g.id)} style={{ padding: '0.4rem 1rem', background: '#22c55e', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer' }}>Salvar</button>
+                          <button onClick={() => setEditingExerciseId(null)} style={{ padding: '0.4rem 1rem', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ color: 'var(--primary)' }}>{ex.name}</strong>
+                          <span style={{ fontSize: '0.85rem', color: '#aaa', marginLeft: '1rem' }}>
+                            {ex.sets}x{ex.reps} | Carga: {ex.load} | Rest: {ex.rest} {ex.obs && ` | Obs: ${ex.obs}`}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button onClick={() => startEditingExercise(ex)} style={{ background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer' }}><Edit2 size={16}/></button>
+                          <button onClick={() => deleteExercise(ex.id, g.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -173,13 +258,13 @@ export default function StudentWorkouts({ aluno, onBack }) {
                 </div>
                 <input type="text" placeholder="Observações (opcional)" value={newExercise.obs} onChange={e => setNewExercise({...newExercise, obs: e.target.value})} style={{ padding: '0.6rem', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }} />
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1rem' }}>Salvar Exercício</button>
+                  <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1rem' }}>Salvar Novo Exercício</button>
                   <button type="button" onClick={() => setActiveGroupForm(null)} className="btn-secondary" style={{ padding: '0.5rem 1rem' }}>Cancelar</button>
                 </div>
               </form>
             ) : (
               <button onClick={() => setActiveGroupForm(g.id)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                <Plus size={16}/> Adicionar Exercício
+                <Plus size={16}/> Adicionar Exercício ao Grupo
               </button>
             )}
           </div>
@@ -258,3 +343,4 @@ export default function StudentWorkouts({ aluno, onBack }) {
     </div>
   );
 }
+
