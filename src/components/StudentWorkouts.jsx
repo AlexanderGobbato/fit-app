@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Edit2, Check, X, Copy, Search, Loader2 } from 'lucide-react';
 
 export default function StudentWorkouts({ aluno, onBack }) {
   const [plans, setPlans] = useState([]);
@@ -25,6 +25,14 @@ export default function StudentWorkouts({ aluno, onBack }) {
   const [activeGroupForm, setActiveGroupForm] = useState(null); // group_id
   const [editingExerciseId, setEditingExerciseId] = useState(null);
   const [editExerciseData, setEditExerciseData] = useState({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
+
+  // Copy/Clone States
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [otherStudents, setOtherStudents] = useState([]);
+  const [selectedSourceStudentId, setSelectedSourceStudentId] = useState('');
+  const [otherStudentPlans, setOtherStudentPlans] = useState([]);
+  const [selectedSourcePlanId, setSelectedSourcePlanId] = useState('');
+  const [isCopying, setIsCopying] = useState(false);
 
   useEffect(() => {
     fetchPlans();
@@ -65,6 +73,86 @@ export default function StudentWorkouts({ aluno, onBack }) {
         exTemp[g.id] = exs || [];
       }
       setExercises(exTemp);
+    }
+  };
+
+  // Funções de Cópia
+  const startCopyFlow = async () => {
+    setShowCopyModal(true);
+    // Buscar todos os alunos (menos o atual) para oferecer como origem
+    const { data } = await supabase.from('profiles').select('*').eq('role', 'ALUNO').neq('id', aluno.id).order('full_name');
+    if (data) setOtherStudents(data);
+  };
+
+  const fetchPlansBySourceStudent = async (studentId) => {
+    setSelectedSourceStudentId(studentId);
+    if (!studentId) return setOtherStudentPlans([]);
+    const { data } = await supabase.from('workout_plans').select('*').eq('aluno_id', studentId).order('created_at', { ascending: false });
+    if (data) setOtherStudentPlans(data);
+  };
+
+  const handleCopyPlan = async () => {
+    if (!selectedSourcePlanId) return;
+    setIsCopying(true);
+
+    try {
+      // 1. Pegar detalhes do plano de origem
+      const sourcePlan = otherStudentPlans.find(p => p.id === selectedSourcePlanId);
+      
+      // 2. Criar novo plano para o aluno atual
+      const { data: newPlanData, error: planErr } = await supabase.from('workout_plans').insert([{
+        aluno_id: aluno.id,
+        professor_id: aluno.professor_id,
+        title: `Cópia: ${sourcePlan.title}`,
+        start_date: sourcePlan.start_date,
+        end_date: sourcePlan.end_date
+      }]).select();
+
+      if (planErr || !newPlanData) throw new Error('Erro ao criar plano de destino');
+      const newPlan = newPlanData[0];
+
+      // 3. Buscar grupos de origem
+      const { data: sourceGroups } = await supabase.from('workout_groups').select('*').eq('plan_id', sourcePlan.id);
+      
+      if (sourceGroups && sourceGroups.length > 0) {
+        for (const sg of sourceGroups) {
+          // 4. Criar novo grupo no destino
+          const { data: newGroupData, error: groupErr } = await supabase.from('workout_groups').insert([{
+            plan_id: newPlan.id,
+            name: sg.name,
+            order_index: sg.order_index
+          }]).select();
+
+          if (groupErr || !newGroupData) continue;
+          const newGroup = newGroupData[0];
+
+          // 5. Buscar exercícios de cada grupo de origem
+          const { data: sourceExercises } = await supabase.from('exercises').select('*').eq('group_id', sg.id);
+          
+          if (sourceExercises && sourceExercises.length > 0) {
+            const newExercises = sourceExercises.map(se => ({
+              group_id: newGroup.id,
+              name: se.name,
+              sets: se.sets,
+              reps: se.reps,
+              load: se.load,
+              rest: se.rest,
+              obs: se.obs,
+              order_index: se.order_index
+            }));
+
+            await supabase.from('exercises').insert(newExercises);
+          }
+        }
+      }
+
+      alert('Plano clonado com sucesso!');
+      setShowCopyModal(false);
+      fetchPlans();
+    } catch (err) {
+      alert(`Oops: ${err.message}`);
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -279,11 +367,68 @@ export default function StudentWorkouts({ aluno, onBack }) {
         <button onClick={onBack} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <ChevronLeft size={16} /> Voltar
         </button>
-        <span style={{ fontWeight: 'bold' }}>Gerenciando: {aluno.full_name}</span>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+           <button onClick={startCopyFlow} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.4rem 0.8rem', color: 'var(--primary)' }}>
+             <Copy size={16} /> Reaproveitar Treino
+           </button>
+           <span style={{ fontWeight: 'bold' }}>Gerenciando: {aluno.full_name}</span>
+        </div>
       </div>
 
+      {showCopyModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: '1rem' }}>
+          <div className="glass-card" style={{ maxWidth: '500px', width: '100%', border: '1px solid var(--primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Copy size={20}/> Reaproveitar de Outro Aluno</h3>
+              <button onClick={() => setShowCopyModal(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={20}/></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+               <div>
+                  <label style={{ fontSize: '0.8rem', color: '#aaa', display: 'block', marginBottom: '0.3rem' }}>1. Selecione o Aluno de Origem</label>
+                  <select 
+                    value={selectedSourceStudentId} 
+                    onChange={e => fetchPlansBySourceStudent(e.target.value)}
+                    style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.4)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    <option value="">Escolher Aluno...</option>
+                    {otherStudents.map(s => (
+                      <option key={s.id} value={s.id} style={{ color: '#000' }}>{s.full_name}</option>
+                    ))}
+                  </select>
+               </div>
+
+               {selectedSourceStudentId && (
+                 <div>
+                    <label style={{ fontSize: '0.8rem', color: '#aaa', display: 'block', marginBottom: '0.3rem' }}>2. Selecione o Plano para Copiar</label>
+                    <select 
+                      value={selectedSourcePlanId} 
+                      onChange={e => setSelectedSourcePlanId(e.target.value)}
+                      style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.4)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      <option value="">Escolher Plano...</option>
+                      {otherStudentPlans.map(p => (
+                        <option key={p.id} value={p.id} style={{ color: '#000' }}>{p.title}</option>
+                      ))}
+                    </select>
+                 </div>
+               )}
+
+               <button 
+                onClick={handleCopyPlan} 
+                disabled={!selectedSourcePlanId || isCopying}
+                className="btn-primary" 
+                style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+               >
+                 {isCopying ? <><Loader2 className="animate-spin" size={18}/> Clonando...</> : 'Iniciar Cópia Mestre'}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={createPlan} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
-        <h4 style={{ width: '100%' }}>Novo Planejamento</h4>
+        <h4 style={{ width: '100%' }}>Novo Planejamento Manual</h4>
         <input type="text" placeholder="Título do Plano (Ex: Foco Hipertrofia)" value={newTitle} onChange={e => setNewTitle(e.target.value)} required style={{ flex: '1 1 100%', padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
         <div style={{ flex: '1 1 45%', display: 'flex', flexDirection: 'column' }}>
           <label style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '0.3rem' }}>Início (Opcional)</label>
@@ -343,4 +488,5 @@ export default function StudentWorkouts({ aluno, onBack }) {
     </div>
   );
 }
+
 
