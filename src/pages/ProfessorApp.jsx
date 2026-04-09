@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, supabaseSilentAuth } from '../lib/supabase';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import StudentWorkouts from '../components/StudentWorkouts';
 
 export default function ProfessorApp() {
   const { profile, signOut } = useAuth();
   const [alunos, setAlunos] = useState([]);
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useLocalStorage(`fit-app:professor:${profile?.id}:newEmail`, '');
+  const [newPassword, setNewPassword] = useLocalStorage(`fit-app:professor:${profile?.id}:newPassword`, '');
+  const [newName, setNewName] = useLocalStorage(`fit-app:professor:${profile?.id}:newName`, '');
   const [loading, setLoading] = useState(false);
-  const [selectedAluno, setSelectedAluno] = useState(null);
+  const [selectedAluno, setSelectedAluno] = useLocalStorage(`fit-app:professor:${profile?.id}:selectedAluno`, null);
 
   useEffect(() => {
     if (profile?.id) {

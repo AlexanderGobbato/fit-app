@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { ChevronLeft, Plus, Trash2, Edit2, Check, X, Copy, Search, Loader2 } from 'lucide-react';
 
 export default function StudentWorkouts({ aluno, onBack }) {
   const [plans, setPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedPlanId, setSelectedPlanId] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:selectedPlanId`, '');
   
-  const [newTitle, setNewTitle] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [newTitle, setNewTitle] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:newTitle`, '');
+  const [startDate, setStartDate] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:startDate`, '');
+  const [endDate, setEndDate] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:endDate`, '');
   
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -16,12 +18,12 @@ export default function StudentWorkouts({ aluno, onBack }) {
   const [editEndDate, setEditEndDate] = useState('');
   
   const [groups, setGroups] = useState([]);
-  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupName, setNewGroupName] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:newGroupName`, '');
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [editGroupName, setEditGroupName] = useState('');
   
   const [exercises, setExercises] = useState({}); // { group_id: [] }
-  const [newExercise, setNewExercise] = useState({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
+  const [newExercise, setNewExercise] = useLocalStorage(`fit-app:professor:aluno:${aluno.id}:newExercise`, { name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
   const [activeGroupForm, setActiveGroupForm] = useState(null); // group_id
   const [editingExerciseId, setEditingExerciseId] = useState(null);
   const [editExerciseData, setEditExerciseData] = useState({ name: '', sets: '', reps: '', load: '', rest: '', obs: '' });
@@ -40,7 +42,13 @@ export default function StudentWorkouts({ aluno, onBack }) {
 
   const fetchPlans = async () => {
     const { data } = await supabase.from('workout_plans').select('*').eq('aluno_id', aluno.id).order('created_at', { ascending: false });
-    if (data) setPlans(data);
+    if (data) {
+      setPlans(data);
+      if (selectedPlanId) {
+        const restored = data.find(p => p.id === selectedPlanId);
+        if (restored) openPlan(restored);
+      }
+    }
   };
 
   const createPlan = async (e) => {
@@ -64,6 +72,7 @@ export default function StudentWorkouts({ aluno, onBack }) {
   // Quando abre um plano, carrega grupos e exercícios
   const openPlan = async (plan) => {
     setSelectedPlan(plan);
+    setSelectedPlanId(plan.id);
     const { data: gs } = await supabase.from('workout_groups').select('*').eq('plan_id', plan.id).order('created_at');
     if (gs) {
       setGroups(gs);

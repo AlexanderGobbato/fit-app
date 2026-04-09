@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { History, Dumbbell, Calendar, CheckSquare } from 'lucide-react';
 import './Dashboard.css';
 
@@ -9,17 +10,18 @@ export default function Dashboard() {
   
   const [plans, setPlans] = useState([]);
   const [activePlan, setActivePlan] = useState(null);
+  const [activePlanId, setActivePlanId] = useLocalStorage(`fit-app:${profile?.id}:dashboard:activePlanId`, '');
   const [groups, setGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useLocalStorage(`fit-app:${profile?.id}:dashboard:selectedGroupId`, '');
   const [exercises, setExercises] = useState([]);
   const [history, setHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('train'); // 'train' ou 'history'
+  const [activeTab, setActiveTab] = useLocalStorage(`fit-app:${profile?.id}:dashboard:activeTab`, 'train');
   
-  const [isFocusMode, setIsFocusMode] = useState(false);
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [completedSets, setCompletedSets] = useState({});
+  const [isFocusMode, setIsFocusMode] = useLocalStorage(`fit-app:${profile?.id}:dashboard:isFocusMode`, false);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useLocalStorage(`fit-app:${profile?.id}:dashboard:currentExerciseIndex`, 0);
+  const [completedSets, setCompletedSets] = useLocalStorage(`fit-app:${profile?.id}:dashboard:completedSets`, {});
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState('');
+  const [selectedDay, setSelectedDay] = useLocalStorage(`fit-app:${profile?.id}:dashboard:selectedDay`, '');
 
   useEffect(() => {
     if (profile?.id) {
@@ -38,8 +40,13 @@ export default function Dashboard() {
 
     if (data && data.length > 0) {
       setPlans(data);
-      setActivePlan(data[0]); 
-      fetchGroups(data[0].id);
+      // Try to restore from saved activePlanId or fallback to first one
+      const savedPlan = activePlanId ? data.find(p => p.id === activePlanId) : null;
+      const targetPlan = savedPlan || data[0];
+      
+      setActivePlan(targetPlan);
+      setActivePlanId(targetPlan.id);
+      fetchGroups(targetPlan.id);
     } else {
       setLoading(false);
     }
@@ -64,8 +71,13 @@ export default function Dashboard() {
     
     if (data && data.length > 0) {
       setGroups(data);
-      setSelectedGroupId(data[0].id);
-      fetchExercises(data[0].id);
+      
+      // Try to restore from saved selectedGroupId or fallback to first one
+      const savedGroup = selectedGroupId ? data.find(g => g.id === selectedGroupId) : null;
+      const targetGroupId = savedGroup ? savedGroup.id : data[0].id;
+      
+      setSelectedGroupId(targetGroupId);
+      fetchExercises(targetGroupId);
     } else {
       setGroups([]);
       setExercises([]);
@@ -90,6 +102,7 @@ export default function Dashboard() {
     const pId = e.target.value;
     const plan = plans.find(p => p.id === pId);
     setActivePlan(plan);
+    setActivePlanId(pId);
     fetchGroups(pId);
   };
 
@@ -142,6 +155,8 @@ export default function Dashboard() {
       alert('Treino concluído e salvo no histórico! Parabéns!');
       setIsFocusMode(false);
       setSelectedDay('');
+      setCompletedSets({});
+      setCurrentExerciseIndex(0);
       fetchHistory(); // Recarregar histórico
     } else {
       alert('Erro ao salvar o treino.');
